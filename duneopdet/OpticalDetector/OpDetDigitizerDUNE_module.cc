@@ -117,9 +117,7 @@ namespace opdet
 
   public:
     OpDetDigitizerDUNE(fhicl::ParameterSet const &);
-    // Should the destructor be empty?
-    //      virtual ~OpDetDigitizerDUNE();
-
+    virtual ~OpDetDigitizerDUNE();
     void produce(art::Event &);
 
   private:
@@ -180,6 +178,8 @@ namespace opdet
     // Make sure the FHiCL parameters make sense
     void CheckFHiCLParameters() const;
 
+    // Maps a channel to a template file
+    std::map<unsigned int, unsigned int> fChannelToTemplateMap; //!< maps a channel id to the input SPE  template file (index in fSinglePEWaveforms)
     std::vector<double> fSinglePEWaveform;
     void CreateSinglePEWaveform();
 
@@ -347,13 +347,6 @@ namespace opdet
     fRandFlat = std::make_unique<CLHEP::RandFlat>(engine);
 
     // Creating a single photoelectron waveform
-
-    // Hardcoded, probably need to read them from the FHiCL file
-    // fPulseLength  = 4.0;
-    // fPeakTime     = 0.260;
-    // fMaxAmplitude = 0.12;
-    // fFrontTime    = 0.009;
-    // fBackTime     = 0.476;
     CreateSinglePEWaveform();
   }
 

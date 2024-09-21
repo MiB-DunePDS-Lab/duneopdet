@@ -24,29 +24,23 @@ dunefd_opdigi_unganged:
    CrossTalk:            0.20     # Probability of producing 2 PE for 1 incident photon
    # Afterpulsing:       0.006    # Afterpulsing is not yet simulated
    Pedestal:             1500     # in ADC counts
-   DefaultSimWindow:     true     # Use -1*drift window as the start time and
-                                  # the TPC readout window end time as the end time
-   FullWaveformOutput:   false    # Output full waveform. Be careful with this option:
-                                  # setting it to "true" can result in large output files
+   DefaultSimWindow:     true     # Sets the start/end time to -1/+1 drift windows
+   FullWaveformOutput:   false    # Output full waveforms -- produces large output!
    TimeBegin:            0        # In us (not used if DefaultSimWindow is set to true)
    TimeEnd:              1600     # In us (not used if DefaultSimWindow is set to true)
    PreTrigger:           100      # In ticks
    ReadoutWindow:        1000     # In ticks
-   algo_threshold: @local::standard_algo_sspleadingedge
-
    Padding:              100      # In ticks
-
-   PulseLength:	  5.2
-   PeakTime:		  0.0260
-   MaxAmplitude:	  0.0594
-   FrontTime:		  0.013
-   BackTime:		  0.386
+   PulseLength:	       5.2
+   PeakTime:		       0.0260
+   MaxAmplitude:	       0.0594
+   FrontTime:		       0.013
+   BackTime:		       0.386
    SSP_LED_DigiTree:     false     #To create a SSP LED trigger Ttree
+   algo_threshold:       @local::standard_algo_sspleadingedge
    
-   #Parameters for testbench SPE
-
-   TestbenchSinglePE:    false     # false for ideal XArapuca response, true for testbench 
-#  SPEDataFile:          "./fbk_DAPHNE_Dec22.txt"  #File containing the SPE with one column in the testbench to readout XARAPUCAS: DAPHNE electronics (62.5MHz) 
+   #Parameters for SPE Template
+   UsingSinglePETemplate: false     # false for ideal PDS response, true for template 
    SPEDataFile: "SPE_DAPHNE2_FBK_2022.dat"
                                                   
    # readout window in optical ticks
@@ -64,12 +58,12 @@ dunefd_opdigi_unganged:
    # SaturationScale:         16383 # 2^14 - 1, based on SSP Data
 }
 
-dunefd_opdigi_threegang:	                            @local::dunefd_opdigi_unganged
-dunefd_opdigi_threegang.PulseLength:	                5.2
-dunefd_opdigi_threegang.PeakTime:	                0.028
-dunefd_opdigi_threegang.MaxAmplitude:	                0.0594 # * VoltageToADC = 9 ADC/PE
-dunefd_opdigi_threegang.FrontTime:	                0.013
-dunefd_opdigi_threegang.BackTime:	                0.386
+dunefd_opdigi_threegang:	                           @local::dunefd_opdigi_unganged
+dunefd_opdigi_threegang.PulseLength:	               5.2
+dunefd_opdigi_threegang.PeakTime:	                  0.028
+dunefd_opdigi_threegang.MaxAmplitude:	               0.0594 # * VoltageToADC = 9 ADC/PE
+dunefd_opdigi_threegang.FrontTime:	                  0.013
+dunefd_opdigi_threegang.BackTime:	                  0.386
 dunefd_opdigi_threegang.algo_threshold.ADCThreshold:  15.000 # "2 PE" threshold = 1.7 PE
 
 dunefd_opdigi_threegang_refactor: @local::dunefd_opdigi_threegang
@@ -85,7 +79,7 @@ protodune_opdigi_refactor.InputModules: ["PDFastSim"]
 
 
 standard_fbk_daphnev2_template_digitizer: @local::dunefd_opdigi_threegang_refactor
-standard_fbk_daphnev2_template_digitizer.TestbenchSinglePE: true
+standard_fbk_daphnev2_template_digitizer.UsingSPETemplate: true
 standard_fbk_daphnev2_template_digitizer.SPEDataFile: "SPE_DAPHNE2_FBK_2022.dat" # Path to SPE template
 standard_fbk_daphnev2_template_digitizer.algo_threshold: @local::template_algo_sspleadingedge
 
