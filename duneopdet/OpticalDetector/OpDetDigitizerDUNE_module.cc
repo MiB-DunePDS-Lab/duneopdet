@@ -180,8 +180,14 @@ namespace opdet
 
     // Maps a channel to a template file
     std::map<unsigned int, unsigned int> fChannelToTemplateMap; //!< maps a channel id to the input SPE  template file (index in fSinglePEWaveforms)
+    std::vector<std::vector<double>> fSinglePEWaveforms;
     std::vector<double> fSinglePEWaveform;
     void CreateSinglePEWaveform();
+
+    // Noise templates -- input in frequency domain
+    std::vector<std::vector<double>> fNoiseTemplates;                //!< Vector that stores noise template in frequency domain
+    std::map<unsigned int, unsigned int> fChannelToNoiseTemplateMap; //!< maps a channel id to the input SPE  template file (index in fSingle
+    std::vector<double> fNoiseDefault;
 
     // Produce waveform on one of the optical detectors
     void CreatePDWaveform(art::Ptr<sim::OpDetBacktrackerRecord> const &btr_p,
@@ -193,7 +199,11 @@ namespace opdet
 
     // Vary the pedestal
     void AddLineNoise(std::vector<std::vector<double>> &,
-                      const std::vector<FocusList> &fls) const;
+                      const std::vector<FocusList> &fls, int channel) const;
+
+    double GenerateGaussianNoise(double mean, double sigma) const;
+
+    std::vector<double> GenerateNoiseFromTemplate(const std::vector<double> &NoiseTemplate, int N);
 
     void AddDarkNoise(std::vector<std::vector<double>> &,
                       std::vector<FocusList> &fls) const;
@@ -347,7 +357,90 @@ namespace opdet
     fRandFlat = std::make_unique<CLHEP::RandFlat>(engine);
 
     // Creating a single photoelectron waveform
-    CreateSinglePEWaveform();
+    if (fUseSinglePETemplate)
+    {
+      // Prepare the SPE waveform templates
+      SourceSPEDigiDataFiles();
+
+      // prepare channel to template map
+      {
+        auto channels = pars().TemplateMap_channel();
+        auto templates = pars().TemplateMap_template();
+        auto chann = channels.begin();
+        auto templ = templates.begin();
+        for (; chann != channels.end(); ++chann, ++templ)
+        {
+          fChannelToTemplateMap[*chann] = *templ;
+        }
+      }
+
+      // Prepare the noise templates
+      SourceNoiseTemplateFiles();
+      {
+        auto channels = pars().NoiseTemplateMap_channel();
+        auto templates = pars().NoiseTemplateMap_template();
+        auto chann = channels.begin();
+        auto templ = templates.begin();
+        for (; chann != channels.end(); ++chann, ++templ)
+        {
+          fChannelToNoiseTemplateMap[*chann] = *templ;
+        }
+      }
+
+      //=== info print out ===
+      auto mfi = mf::LogInfo("Deconvolution::Deconvolution()");
+      // info on channel to SPE template map
+      mfi << "Channels mapped to SPE template files:\n";
+      {
+        std::map<std::string, std::vector<int>> templ_to_channel_map;
+        for (auto itm : fChannelToTemplateMap)
+          templ_to_channel_map[fDigiDataFiles[itm.second]].push_back(itm.first);
+        for (auto itm : templ_to_channel_map)
+        {
+          mfi << "    " << itm.first << ": ";
+          for (auto ch : itm.second)
+            mfi << ch << ", ";
+          mfi << "\n";
+        }
+      }
+      mfi << "\n";
+
+      // info on channel to noise template map
+      mfi << "Default white noise RMS: " << fLineNoiseRMS << "\n";
+
+      mfi << "Channels mapped to noise template files:\n";
+      {
+        std::map<std::string, std::vector<int>> templ_to_channel_map;
+        for (auto itm : fChannelToNoiseTemplateMap)
+          templ_to_channel_map[fNoiseTemplateFiles[itm.second]].push_back(itm.first);
+        for (auto itm : templ_to_channel_map)
+        {
+          mfi << "    " << itm.first << ": ";
+          for (auto ch : itm.second)
+            mfi << ch << ", ";
+          mfi << "\n";
+        }
+      }
+      if (!fChannelToNoiseTemplateMap.size())
+        mfi << "Only using default white noise.\n";
+      mfi << "\n";
+      //=== === ===
+
+      CreateSinglePEWaveform();
+    }
+    else
+    {
+      // shape of single pulse
+      mf::LogDebug("OpDetDigitizerDUNE") << " ideal pe response";
+      size_t length = static_cast<size_t>(std::round(fPulseLength * fSampleFreq));
+      fSinglePEWaveform.resize(length);
+      for (size_t tick = 0; tick != length; ++tick)
+      {
+        fSinglePEWaveform[tick] =
+            Pulse1PE(static_cast<double>(tick) / fSampleFreq);
+      }
+      std::cout << " out " << " using ideal spe " << std ::endl;
+    }
   }
 
   //---------------------------------------------------------------------------
@@ -393,7 +486,6 @@ namespace opdet
       for (auto const &btr : btr_vec)
       {
         int opDet = btr->OpDetNum();
-        // unsigned int opDet = btr->OpDetNum();
 
         // Get number of channels in this optical detector
         unsigned int nChannelsPerOpDet = geometry->NOpHardwareChannels(opDet);
@@ -424,7 +516,7 @@ namespace opdet
 
         // Vary the pedestal
         if (fLineNoiseRMS > 0.0)
-          AddLineNoise(pdWaveforms, fls);
+          AddLineNoise(pdWaveforms, fls, opDet);
 
         // Loop over all the created waveforms, split them into shorter
         // waveforms and use them to initialize OpDetWaveforms
@@ -486,17 +578,32 @@ namespace opdet
                                     int scale, std::vector<double> &waveform,
                                     FocusList &fl) const
   {
+    if (fUsingSinglePETemplate)
+    {
+      // How many bins will be changed
+      size_t pulseLength = fSinglePEWaveforms[fChannelToTemplateMap[channel]].size();
+      if ((timeBin + fSinglePEWaveforms[fChannelToTemplateMap[channel]].size()) > waveform.size())
+        pulseLength = (waveform.size() - timeBin);
 
-    // How many bins will be changed
-    size_t pulseLength = fSinglePEWaveform.size();
-    if ((timeBin + fSinglePEWaveform.size()) > waveform.size())
-      pulseLength = (waveform.size() - timeBin);
+      fl.AddRange(timeBin, timeBin + pulseLength - 1);
 
-    fl.AddRange(timeBin, timeBin + pulseLength - 1);
+      // Adding a pulse to the waveform
+      for (size_t tick = 0; tick != pulseLength; ++tick)
+        waveform[timeBin + tick] += scale * fSinglePEWaveforms[fChannelToTemplateMap[channel]][tick];
+    }
+    else
+    {
+      // How many bins will be changed
+      size_t pulseLength = fSinglePEWaveform.size();
+      if ((timeBin + fSinglePEWaveform.size()) > waveform.size())
+        pulseLength = (waveform.size() - timeBin);
 
-    // Adding a pulse to the waveform
-    for (size_t tick = 0; tick != pulseLength; ++tick)
-      waveform[timeBin + tick] += scale * fSinglePEWaveform[tick];
+      fl.AddRange(timeBin, timeBin + pulseLength - 1);
+
+      // Adding a pulse to the waveform
+      for (size_t tick = 0; tick != pulseLength; ++tick)
+        waveform[timeBin + tick] += scale * fSinglePEWaveform[tick];
+    }
   }
 
   //---------------------------------------------------------------------------
@@ -615,7 +722,7 @@ namespace opdet
               unsigned int opChannel = geometry.OpChannel(opDet, hardwareChannel);
               // Set/find tick. Set/find Channel
               sim::OpDet_Time_Chans::stored_time_t tmp_time = time_sdps.first;
-              DivRec.AddPhoton(opChannel, tid, tmp_time);
+              DivRec.m(opChannel, tid, tmp_time);
               if (fDigiTree_SSP_LED)
               {
                 op_photon.emplace_back(opChannel);
@@ -650,7 +757,7 @@ namespace opdet
   //---------------------------------------------------------------------------
   void OpDetDigitizerDUNE::
       AddLineNoise(std::vector<std::vector<double>> &waveforms,
-                   const std::vector<FocusList> &fls) const
+                   const std::vector<FocusList> &fls, int channel) const
   {
     int i = 0;
     for (auto &waveform : waveforms)
@@ -658,14 +765,54 @@ namespace opdet
       for (unsigned int j = 0; j < fls[i].ranges.size(); ++j)
       {
         const std::pair<int, int> &p = fls[i].ranges[j];
-        for (int k = p.first; k <= p.second; ++k)
+        const std::vector<double> NoiseTemplate = fNoiseTemplates[fChannelToNoiseTemplateMap[channel]];
+        std::vector<double> Noise = GenerateNoiseFromTemplate(NoiseTemplate, p.second - p.first + 1);
+        if (fUseSinglePETemplate)
         {
-          waveform[k] += fRandGauss->fire(0, fLineNoiseRMS);
+          for (int k = p.first; k <= p.second; ++k)
+          {
+            waveform[k] += Noise[k - p.first];
+          }
+        }
+        else
+        {
+          for (int k = p.first; k <= p.second; ++k)
+          {
+            waveform[k] += fRandGauss->fire(0, fLineNoiseRMS);
+          }
         }
       }
 
       ++i;
     }
+  }
+
+  // Generate random Gaussian noise with a specific variance
+  double GenerateGaussianNoise(double variance, std::mt19937 &gen, std::normal_distribution<> &dist)
+  {
+    double stddev = sqrt(variance); // Standard deviation is sqrt of variance
+    return dist(gen) * stddev;      // Scale Gaussian noise by standard deviation
+  }
+
+  // Function to generate noise directly from a power spectrum (time domain approximation)
+  std::vector<double> GenerateNoiseFromTemplate(const std::vector<double> &NoiseTemplate, int N)
+  {
+    // Set up random number generator for Gaussian noise
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::normal_distribution<> dist(0.0, 1.0); // Standard normal distribution (mean 0, stddev 1)
+
+    // Output noise signal
+    std::vector<double> noise(N, 0.0);
+
+    // Generate noise bin by bin using the power spectrum
+    for (int i = 0; i < N; i++)
+    {
+      double variance = NoiseTemplate[i];                    // Variance for this bin (from power spectrum)
+      noise[i] = GenerateGaussianNoise(variance, gen, dist); // Generate noise with this variance
+    }
+
+    return noise;
   }
 
   //---------------------------------------------------------------------------
@@ -707,16 +854,6 @@ namespace opdet
   {
     // Don't bother to round properly, it's faster this way
     return std::vector<short>(vectorOfDoubles.begin(), vectorOfDoubles.end());
-
-    /*
-       std::vector< short > vectorOfShorts;
-       vectorOfShorts.reserve(vectorOfDoubles.size());
-
-       for (short const& value : vectorOfDoubles)
-       vectorOfShorts.emplace_back(static_cast< short >(std::round(value)));
-
-       return vectorOfShorts;
-       */
   }
 
   //---------------------------------------------------------------------------
@@ -856,7 +993,6 @@ namespace opdet
     else
     {
       art::ServiceHandle<opdet::OpDetResponseInterface> odResponse;
-      // Service for determining optical detector responses
       return odResponse->detectedLite(OpDet, readoutChannel);
     }
   }
