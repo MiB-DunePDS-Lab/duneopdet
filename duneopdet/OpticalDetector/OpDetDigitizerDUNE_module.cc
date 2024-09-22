@@ -161,7 +161,7 @@ namespace opdet
     // Function that adds n pulses to a waveform
     void AddPulse(size_t timeBin, int scale,
                   std::vector<double> &waveform,
-                  FocusList &fl) const;
+                  FocusList &fl, unsigned int channel) const;
 
     // Functional response to one photoelectron (time in ns)
     double Pulse1PE(double time) const;
@@ -576,7 +576,7 @@ namespace opdet
   //---------------------------------------------------------------------------
   void OpDetDigitizerDUNE::AddPulse(size_t timeBin,
                                     int scale, std::vector<double> &waveform,
-                                    FocusList &fl) const
+                                    FocusList &fln, unsigned int channel) const
   {
     if (fUsingSinglePETemplate)
     {
@@ -717,7 +717,7 @@ namespace opdet
               // Convert the time of the pulse to ticks
               size_t timeBin = TimeToTick(photonTime);
               // Add 1 pulse to the waveform
-              AddPulse(timeBin, CrossTalk(), pdWaveforms.at(hardwareChannel), fls[hardwareChannel]);
+              AddPulse(timeBin, CrossTalk(), pdWaveforms.at(hardwareChannel), fls[hardwareChannel], hardwareChannel);
 
               unsigned int opChannel = geometry.OpChannel(opDet, hardwareChannel);
               // Set/find tick. Set/find Channel
@@ -818,9 +818,10 @@ namespace opdet
   //---------------------------------------------------------------------------
   void OpDetDigitizerDUNE::
       AddDarkNoise(std::vector<std::vector<double>> &waveforms,
-                   std::vector<FocusList> &fls) const
+                   std::vector<FocusList> &fls, int SignedChannel) const
   {
     int i = 0;
+    unsigned int channel = SignedChannel;
     for (auto &waveform : waveforms)
     {
       // Multiply by 10^6 since fDarkNoiseRate is in Hz
@@ -828,7 +829,7 @@ namespace opdet
       while (darkNoiseTime < fTimeEnd)
       {
         size_t timeBin = TimeToTick(darkNoiseTime);
-        AddPulse(timeBin, CrossTalk(), waveform, fls[i]);
+        AddPulse(timeBin, CrossTalk(), waveform, fls[i], channel);
         // Find next time to simulate a single PE pulse
         darkNoiseTime += static_cast<double>(fRandExponential->fire(1.0 / fDarkNoiseRate) * 1000000.0);
       }
