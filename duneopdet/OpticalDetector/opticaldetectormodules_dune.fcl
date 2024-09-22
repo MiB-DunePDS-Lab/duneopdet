@@ -1,10 +1,14 @@
 ###########################################
-# Last Modified: 28/05/2023               #
+# Prev Modified: 28/05/2023               #
 # To include XArapuca temaptes            #
 # by M. Delgado, D. Guffanti & S. Manthey #
+# Last Modified: 21/09/2024               #
+# To include temaptes per channel         #
+# S. Manthey                              #
 ###########################################
 
 #include "opticaldetectormodules.fcl"
+#include "SPETemplates.fcl"
 #include "sspmodules.fcl"
 
 BEGIN_PROLOG
