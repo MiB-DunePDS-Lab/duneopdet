@@ -2,53 +2,13 @@
 
 namespace opdet
 {
-    SPETemplateUtils::SPETemplateUtils(fhicl::ParameterSet const &p)
-        : fSamples(p.get<int>("Samples")),
-          fDigiDataColumn(p.get<int>("DigiDataColumn")),
-          fDigiDataFiles(p.get<std::vector<std::string>>("DigiDataFiles")),
-          fNoiseTemplateFiles(p.get<std::vector<std::string>>("NoiseTemplateFiles"))
+    SPETemplateUtils::SPETemplateUtils(fhicl::ParameterSet const &pset)
+        : fSamples(pset.get<int>("Samples")),
+          fDigiDataColumn(pset.get<size_t>("DigiDataColumn")),
+          fSPEDataFile(pset.get<std::string>("SPEDataFile")),
+          fDigiDataFiles(pset.get<std::vector<std::string>>("DigiDataFiles")),
+          fNoiseTemplateFiles(pset.get<std::vector<std::string>>("NoiseTemplateFiles"))
     {
-    }
-
-    /**
-     * @brief Source the single p.e. response from file
-     *
-     * Source the single p.e. response template from the dat file set by
-     * `fDigiDataFile` and set the variable `fSinglePEAmplitude` with the
-     * amplitude of the single p.e. response. In case of a multi-column
-     * template file, the relevant column can be selected by setting the
-     * variable `fDigiDataColumn`.
-     */
-
-    void SPETemplateUtils::CreateSinglePEWaveform()
-    {
-        mf::LogDebug("SPETemplate") << "Using SPETemplate!!! With: " << fSPEDataFile;
-
-        std::string datafile;
-        cet::search_path sp("FW_SEARCH_PATH");
-        // taking the file name as the first argument,
-        // the second argument is the local variable where to store the full path - both are std::string objects
-        sp.find_file(fSPEDataFile, datafile);
-        std::ifstream SPEData;
-        SPEData.open(datafile);
-        if (SPEData.is_open())
-        {
-            std::vector<double> SinglePEVec_x; // 1 column
-            Double_t x;
-            while (SPEData >> x)
-            {
-                SinglePEVec_x.push_back(x);
-            }
-            fSinglePEWaveform = SinglePEVec_x;
-            fPulseLength = fSinglePEWaveform.size();
-            SPEData.close();
-            return;
-        }
-        else
-        {
-            throw cet::exception("SPETemplate") << "No Waveform File: Cannot open SPE template file.\n";
-        }
-        return;
     }
 
     /**
@@ -108,6 +68,15 @@ namespace opdet
         return N_COLUMNS;
     }
 
+    /**
+     * @brief Source the single p.e. response from file
+     *
+     * Source the single p.e. response template from the dat file set by
+     * `fDigiDataFile` and set the variable `fSinglePEAmplitude` with the
+     * amplitude of the single p.e. response. In case of a multi-column
+     * template file, the relevant column can be selected by setting the
+     * variable `fDigiDataColumn`.
+     */
     void SPETemplateUtils::SourceSPEDigiDataFiles()
     {
         cet::search_path sp("FW_SEARCH_PATH");
@@ -125,7 +94,7 @@ namespace opdet
             std::cout << "ncols= " << n_columns << std::endl;
             if (fDigiDataColumn >= n_columns)
             {
-                printf("SPETemplateUtils::SourceSPETemplate ERROR: ");
+                printf("Deconvolution::SourceSPETemplate ERROR: ");
                 printf("The module is supposed to select column %lu, but only %lu columns are present.\n",
                        fDigiDataColumn, n_columns);
                 throw art::Exception(art::errors::InvalidNumber);
@@ -152,7 +121,7 @@ namespace opdet
             }
             else
             {
-                printf("SPETemplateUtils::produce ERROR ");
+                printf("Deconvolution::produce ERROR ");
                 printf("Cannot open SPE template file.\n");
 
                 throw art::Exception(art::errors::FileOpenError);
@@ -215,67 +184,5 @@ namespace opdet
             noiseData.close();
         }
         return;
-    }
-
-    // This function creates a terminal color printout
-    void SPETemplateUtils::PrintInColor(std::string MyString, int Color, std::string Type)
-    {
-        if (Type == "Info")
-        {
-            mf::LogInfo("SolarNuAna") << "\033[" << Color << "m" << MyString << "\033[0m";
-        }
-        if (Type == "Debug")
-        {
-            mf::LogDebug("SolarNuAna") << "\033[" << Color << "m" << MyString << "\033[0m";
-        }
-        if (Type == "Error")
-        {
-            mf::LogError("SolarNuAna") << "\033[" << Color << "m" << MyString << "\033[0m";
-        }
-        return;
-    }
-
-    // ......................................................
-    // This function returns an integer that corresponds to a given color name
-    int SPETemplateUtils::GetColor(std::string ColorName)
-    {
-        if (ColorName == "black")
-            return 30;
-        else if (ColorName == "red")
-            return 31;
-        else if (ColorName == "green")
-            return 32;
-        else if (ColorName == "yellow")
-            return 33;
-        else if (ColorName == "blue")
-            return 34;
-        else if (ColorName == "magenta")
-            return 35;
-        else if (ColorName == "cyan")
-            return 36;
-        else if (ColorName == "white")
-            return 37;
-        else if (ColorName == "bright_black")
-            return 90;
-        else if (ColorName == "bright_red")
-            return 91;
-        else if (ColorName == "bright_green")
-            return 92;
-        else if (ColorName == "bright_yellow")
-            return 93;
-        else if (ColorName == "bright_blue")
-            return 94;
-        else if (ColorName == "bright_magenta")
-            return 95;
-        else if (ColorName == "bright_cyan")
-            return 96;
-        else if (ColorName == "bright_white")
-            return 97;
-        else
-        {
-            mf::LogError("SolarNuAna") << "Color " << ColorName << " not recognized. Returning white.";
-            return 37;
-        }
-        return 0;
     }
 } // namespace solar

@@ -45,6 +45,9 @@
 #include "dunecore/DuneObj/OpDetDivRec.h"
 #include "lardata/DetectorInfoServices/LArPropertiesService.h"
 
+// Auxiliary functions
+#include "duneopdet/SPETemplate/SPETemplateUtils.h"
+
 // CLHEP includes
 #include "CLHEP/Random/RandGauss.h"
 #include "CLHEP/Random/RandExponential.h"
@@ -117,7 +120,16 @@ namespace opdet
 
   public:
     OpDetDigitizerDUNE(fhicl::ParameterSet const &);
-    virtual ~OpDetDigitizerDUNE();
+    // virtual ~OpDetDigitizerDUNE();
+    // Should the destructor be empty? Leads to a compilation error:
+    // /usr/bin/ld: Dwarf Error: found dwarf version '5', this reader only handles version 2, 3 and 4 information.
+    // CMakeFiles/OpDetDigitizerDUNE_module.dir/OpDetDigitizerDUNE_module.cc.o: In function `opdet::OpDetDigitizerDUNE::OpDetDigitizerDUNE(fhicl::ParameterSet const&)':
+    // OpDetDigitizerDUNE_module.cc:(.text+0x7020): undefined reference to `vtable for opdet::OpDetDigitizerDUNE'
+    // collect2: error: ld returned 1 exit status
+    // make[2]: *** [duneopdet/slf7.x86_64.e26.prof/lib/libOpDetDigitizerDUNE_module.so] Error 1
+    // make[1]: *** [duneopdet/duneopdet/OpticalDetector/CMakeFiles/OpDetDigitizerDUNE_module.dir/all] Error 2
+    // make: *** [all] Error 2
+
     void produce(art::Event &);
 
   private:
@@ -127,21 +139,28 @@ namespace opdet
     double fSampleFreq;                  // Sampling frequency in MHz
     double fTimeBegin;                   // Beginning of waveform in us
     double fTimeEnd;                     // End of waveform in us
-    double fVoltageToADC;                // Conversion factor mV to ADC counts
-    double fLineNoiseRMS;                // Pedestal RMS in ADC counts
-    double fDarkNoiseRate;               // In Hz
-    double fCrossTalk;                   // Probability of SiPM producing 2 SPE signal
-    short fPedestal;                     // In ADC counts
-    bool fDefaultSimWindow;              // Sets the start/end time to -1/+1 drift windows
-    bool fFullWaveformOutput;            // Output full waveforms -- produces large output!
-    size_t fReadoutWindow;               // In ticks
-    size_t fPreTrigger;                  // In ticks
-    int fPadding;                        // In ticks
-    bool fDigiTreeSSPLED;                // To create a analysis Tree for SSP LED
-    bool fUseSinglePETemplate;           // Use SPE template from a fil
+
+    double fVoltageToADC;      // Conversion factor mV to ADC counts
+    double fLineNoiseRMS;      // Pedestal RMS in ADC counts
+    double fDarkNoiseRate;     // In Hz
+    double fCrossTalk;         // Probability of SiPM producing 2 SPE signal
+    short fPedestal;           // In ADC counts
+    bool fDefaultSimWindow;    // Sets the start/end time to -1/+1 drift windows
+    bool fFullWaveformOutput;  // Output full waveforms -- produces large output!
+    size_t fReadoutWindow;     // In ticks
+    size_t fPreTrigger;        // In ticks
+    int fPadding;              // In ticks
+    bool fDigiTreeSSPLED;      // To create a analysis Tree for SSP LED
+    bool fUseSinglePETemplate; // Use SPE template from a file
+    bool fUseNoiseTemplate;    // Use noise template from a file
     double fQEOverride;
     double fRefQEOverride;
+
+    int fSamples;
+    size_t fDigiDataColumn;
     std::string fSPEDataFile;
+    std::vector<std::string> fDigiDataFiles;
+    std::vector<std::string> fNoiseTemplateFiles;
 
     //-----------------------------------------------------
     // Trigger analysis variables
@@ -159,9 +178,9 @@ namespace opdet
     std::unique_ptr<CLHEP::RandFlat> fRandFlat;
 
     // Function that adds n pulses to a waveform
-    void AddPulse(size_t timeBin, int scale,
+    void AddPulse(std::vector<double> &fSinglePEWaveform, size_t timeBin, int scale,
                   std::vector<double> &waveform,
-                  FocusList &fl, unsigned int channel) const;
+                  FocusList &fl, unsigned int &channel) const;
 
     // Functional response to one photoelectron (time in ns)
     double Pulse1PE(double time) const;
@@ -170,19 +189,19 @@ namespace opdet
     double fPulseLength;  // 1PE pulse length in us
     double fPeakTime;     // Time when the pulse reaches its maximum in us
     double fMaxAmplitude; // Maximum amplitude of the pulse in mV
-    double fFrontTime;    // Constant in the exponential function
-                          // of the leading edge in us
+    double fFrontTime;    // Constant in the exponential function us
     double fBackTime;     // Constant in the exponential function
                           // of the tail in us
+
+    // Auxiliary functions
+    std::unique_ptr<opdet::SPETemplateUtils> opdetaux;
 
     // Make sure the FHiCL parameters make sense
     void CheckFHiCLParameters() const;
 
     // Maps a channel to a template file
-    std::map<unsigned int, unsigned int> fChannelToTemplateMap; //!< maps a channel id to the input SPE  template file (index in fSinglePEWaveforms)
     std::vector<std::vector<double>> fSinglePEWaveforms;
-    std::vector<double> fSinglePEWaveform;
-    void CreateSinglePEWaveform();
+    std::map<unsigned int, unsigned int> fChannelToTemplateMap; //!< maps a channel id to the input SPE  template file (index in fSinglePEWaveforms)
 
     // Noise templates -- input in frequency domain
     std::vector<std::vector<double>> fNoiseTemplates;                //!< Vector that stores noise template in frequency domain
@@ -197,16 +216,18 @@ namespace opdet
                           sim::OpDetDivRec &DivRec,
                           bool Reflected);
 
-    // Vary the pedestal
+    // Create a waveform for a single photoelectron
+    std::vector<double> CreateSinglePEWaveform(unsigned int channel) const;
+
+    // Add line noise using a template or Gaussian noise
     void AddLineNoise(std::vector<std::vector<double>> &,
-                      const std::vector<FocusList> &fls, int channel) const;
-
-    double GenerateGaussianNoise(double mean, double sigma) const;
-
-    std::vector<double> GenerateNoiseFromTemplate(const std::vector<double> &NoiseTemplate, int N);
-
+                      const std::vector<FocusList> &fls, unsigned int channel) const;
+    // Add line noise using a template or Gaussian noise
+    void AddTemplateNoise(std::vector<std::vector<double>> &,
+                          const std::vector<FocusList> &fls, unsigned int channel) const;
+    // Add dark noise
     void AddDarkNoise(std::vector<std::vector<double>> &,
-                      std::vector<FocusList> &fls) const;
+                      std::vector<FocusList> &fls, unsigned int channel) const;
 
     unsigned short CrossTalk() const;
 
@@ -243,9 +264,11 @@ namespace opdet
   //---------------------------------------------------------------------------
   // Constructor
   OpDetDigitizerDUNE::OpDetDigitizerDUNE(fhicl::ParameterSet const &pset)
-      : EDProducer{pset}, vInputModules(pset.get<std::vector<std::string>>("InputModules")), fInputModules(vInputModules.begin(), vInputModules.end())
+      : EDProducer{pset},
+        vInputModules(pset.get<std::vector<std::string>>("InputModules")),
+        fInputModules(vInputModules.begin(), vInputModules.end()),
+        opdetaux(new opdet::SPETemplateUtils(pset))
   {
-
     // Read the fcl-file
     fVoltageToADC = pset.get<double>("VoltageToADC");
     fLineNoiseRMS = pset.get<double>("LineNoiseRMS");
@@ -262,9 +285,13 @@ namespace opdet
     fMaxAmplitude = pset.get<double>("MaxAmplitude");
     fFrontTime = pset.get<double>("FrontTime");
     fBackTime = pset.get<double>("BackTime");
-    fDigiTree_SSP_LED = pset.get<bool>("SSP_LED_DigiTree");
-    fSPEDataFile = pset.get<std::string>("SPEDataFile");
+    fDigiTreeSSPLED = pset.get<bool>("SSP_LED_DigiTree");
     fUseSinglePETemplate = pset.get<bool>("UseSinglePETemplate");
+    fSamples = pset.get<int>("Samples");
+    fDigiDataColumn = pset.get<int>("DigiDataColumn");
+    fSPEDataFile = pset.get<std::string>("SPEDataFile");
+    fDigiDataFiles = pset.get<std::vector<std::string>>("DigiDataFiles");
+    fNoiseTemplateFiles = pset.get<std::vector<std::string>>("NoiseTemplateFiles");
 
     // Replace QE with effective area. Get area from OpDet geometry
     double tempQE = pset.get<double>("QEOverride", 0);
@@ -314,7 +341,7 @@ namespace opdet
 
     fThreshAlg = std::make_unique<pmtana::AlgoSSPLeadingEdge>(pset.get<fhicl::ParameterSet>("algo_threshold"));
 
-    if (fDigiTree_SSP_LED)
+    if (fDigiTreeSSPLED)
     {
       art::ServiceHandle<art::TFileService> tfs;
       arvore2 = tfs->make<TTree>("PhotonData", "Photon_analysis");
@@ -359,13 +386,16 @@ namespace opdet
     // Creating a single photoelectron waveform
     if (fUseSinglePETemplate)
     {
+      mf::LogInfo("SPETemplate") << "Using SPETemplate!!! With: " << fSPEDataFile;
       // Prepare the SPE waveform templates
-      SourceSPEDigiDataFiles();
+      opdetaux->SourceSPEDigiDataFiles();
 
       // prepare channel to template map
       {
-        auto channels = pars().TemplateMap_channel();
-        auto templates = pars().TemplateMap_template();
+        // auto channels = pars().TemplateMap_channels();
+        auto channels = pset.get<std::vector<unsigned int>>("TemplateMap_channels");
+        // auto templates = pars().TemplateMap_templates();
+        auto templates = pset.get<std::vector<unsigned int>>("TemplateMap_templates");
         auto chann = channels.begin();
         auto templ = templates.begin();
         for (; chann != channels.end(); ++chann, ++templ)
@@ -373,20 +403,6 @@ namespace opdet
           fChannelToTemplateMap[*chann] = *templ;
         }
       }
-
-      // Prepare the noise templates
-      SourceNoiseTemplateFiles();
-      {
-        auto channels = pars().NoiseTemplateMap_channel();
-        auto templates = pars().NoiseTemplateMap_template();
-        auto chann = channels.begin();
-        auto templ = templates.begin();
-        for (; chann != channels.end(); ++chann, ++templ)
-        {
-          fChannelToNoiseTemplateMap[*chann] = *templ;
-        }
-      }
-
       //=== info print out ===
       auto mfi = mf::LogInfo("Deconvolution::Deconvolution()");
       // info on channel to SPE template map
@@ -404,7 +420,25 @@ namespace opdet
         }
       }
       mfi << "\n";
+    }
+    if (fUseNoiseTemplate)
+    {
+      // Prepare the noise templates
+      opdetaux->SourceNoiseTemplateFiles();
+      {
+        // auto channels = pars().NoiseTemplateMap_channels();
+        auto channels = pset.get<std::vector<unsigned int>>("NoiseTemplateMap_channels");
+        // auto templates = pars().NoiseTemplateMap_templates();
+        auto templates = pset.get<std::vector<unsigned int>>("NoiseTemplateMap_templates");
+        auto chann = channels.begin();
+        auto templ = templates.begin();
+        for (; chann != channels.end(); ++chann, ++templ)
+        {
+          fChannelToNoiseTemplateMap[*chann] = *templ;
+        }
+      }
 
+      auto mfi = mf::LogInfo("Deconvolution::Deconvolution()");
       // info on channel to noise template map
       mfi << "Default white noise RMS: " << fLineNoiseRMS << "\n";
 
@@ -425,21 +459,6 @@ namespace opdet
         mfi << "Only using default white noise.\n";
       mfi << "\n";
       //=== === ===
-
-      CreateSinglePEWaveform();
-    }
-    else
-    {
-      // shape of single pulse
-      mf::LogDebug("OpDetDigitizerDUNE") << " ideal pe response";
-      size_t length = static_cast<size_t>(std::round(fPulseLength * fSampleFreq));
-      fSinglePEWaveform.resize(length);
-      for (size_t tick = 0; tick != length; ++tick)
-      {
-        fSinglePEWaveform[tick] =
-            Pulse1PE(static_cast<double>(tick) / fSampleFreq);
-      }
-      std::cout << " out " << " using ideal spe " << std ::endl;
     }
   }
 
@@ -447,7 +466,7 @@ namespace opdet
   void OpDetDigitizerDUNE::produce(art::Event &evt)
   {
 
-    if (fDigiTree_SSP_LED)
+    if (fDigiTreeSSPLED)
       art::ServiceHandle<art::TFileService> tfs;
 
     // A pointer that will store produced OpDetWaveforms
@@ -505,7 +524,7 @@ namespace opdet
 
         // Generate dark noise //I will not at this time include dark noise in my split backtracking records.
         if (fDarkNoiseRate > 0.0)
-          AddDarkNoise(pdWaveforms, fls);
+          AddDarkNoise(pdWaveforms, fls, opDet);
 
         // Uncomment to undo the effect of FocusLists. Replaces the accumulated
         // lists with ones asserting we need to look at the whole trace.
@@ -517,6 +536,8 @@ namespace opdet
         // Vary the pedestal
         if (fLineNoiseRMS > 0.0)
           AddLineNoise(pdWaveforms, fls, opDet);
+        if (fUseNoiseTemplate)
+          AddTemplateNoise(pdWaveforms, fls, opDet);
 
         // Loop over all the created waveforms, split them into shorter
         // waveforms and use them to initialize OpDetWaveforms
@@ -561,7 +582,7 @@ namespace opdet
       }
     }
 
-    if (fDigiTree_SSP_LED)
+    if (fDigiTreeSSPLED)
     {
       arvore2->Fill();
       t_photon.clear();
@@ -574,36 +595,20 @@ namespace opdet
   }
 
   //---------------------------------------------------------------------------
-  void OpDetDigitizerDUNE::AddPulse(size_t timeBin,
+  void OpDetDigitizerDUNE::AddPulse(std::vector<double> &fSinglePEWaveform, size_t timeBin,
                                     int scale, std::vector<double> &waveform,
-                                    FocusList &fln, unsigned int channel) const
+                                    FocusList &fln, unsigned int &channel) const
   {
-    if (fUsingSinglePETemplate)
-    {
-      // How many bins will be changed
-      size_t pulseLength = fSinglePEWaveforms[fChannelToTemplateMap[channel]].size();
-      if ((timeBin + fSinglePEWaveforms[fChannelToTemplateMap[channel]].size()) > waveform.size())
-        pulseLength = (waveform.size() - timeBin);
+    // How many bins will be changed
+    size_t pulseLength = fSinglePEWaveform.size();
+    if ((timeBin + fSinglePEWaveform.size()) > waveform.size())
+      pulseLength = (waveform.size() - timeBin);
 
-      fl.AddRange(timeBin, timeBin + pulseLength - 1);
+    fln.AddRange(timeBin, timeBin + pulseLength - 1);
 
-      // Adding a pulse to the waveform
-      for (size_t tick = 0; tick != pulseLength; ++tick)
-        waveform[timeBin + tick] += scale * fSinglePEWaveforms[fChannelToTemplateMap[channel]][tick];
-    }
-    else
-    {
-      // How many bins will be changed
-      size_t pulseLength = fSinglePEWaveform.size();
-      if ((timeBin + fSinglePEWaveform.size()) > waveform.size())
-        pulseLength = (waveform.size() - timeBin);
-
-      fl.AddRange(timeBin, timeBin + pulseLength - 1);
-
-      // Adding a pulse to the waveform
-      for (size_t tick = 0; tick != pulseLength; ++tick)
-        waveform[timeBin + tick] += scale * fSinglePEWaveform[tick];
-    }
+    // Adding a pulse to the waveform
+    for (size_t tick = 0; tick != pulseLength; ++tick)
+      waveform[timeBin + tick] += scale * fSinglePEWaveform[tick];
   }
 
   //---------------------------------------------------------------------------
@@ -617,38 +622,21 @@ namespace opdet
   }
 
   //---------------------------------------------------------------------------
-  void OpDetDigitizerDUNE::CreateSinglePEWaveform()
+  std::vector<double> OpDetDigitizerDUNE::CreateSinglePEWaveform(unsigned int channel) const
   {
-
+    // Reset fSinglePEWaveform
+    std::vector<double> fSinglePEWaveform;
     if (fUseSinglePETemplate)
     {
-      std::cout << "Using TESTbench spe!!! " << std ::endl;
-      std::cout << "With: " << fSPEDataFile << std::endl;
-      std::string datafile;
-      cet::search_path sp("FW_SEARCH_PATH");
-      // taking the file name as the first argument,
-      // the second argument is the local variable where to store the full path - both are std::string objects
-      sp.find_file(fSPEDataFile, datafile);
-      std::ifstream SPEData;
-      SPEData.open(datafile);
-      if (SPEData.is_open())
+      // Define a channel variable that the fChannelToTemplateMap[channel] can be assigned to
+      if (fChannelToTemplateMap.find(channel) == fChannelToTemplateMap.end())
       {
-        mf::LogDebug("OpDetDigitizerDUNE") << " using testbench pe response";
-        std::vector<double> SinglePEVec_x; // 1 column
-        Double_t x;
-        while (SPEData >> x)
-        {
-          SinglePEVec_x.push_back(x);
-        }
-        fSinglePEWaveform = SinglePEVec_x;
-        fPulseLength = fSinglePEWaveform.size();
-        SPEData.close();
-        return;
+        mf::LogError("OpDetDigitizerDUNE") << "Channel " << channel << " not found in the template map.";
+        throw cet::exception("OpDetDigitizerDUNE") << "Channel " << channel << " not found in the template map.";
       }
-      else
-      {
-        throw cet::exception("OpDetDigitizerDUNE") << "No Waveform File: Cannot open SPE template file.\n";
-      }
+      // How many bins will be changed
+      unsigned int idSignalTemplate = fChannelToTemplateMap.at(channel);
+      fSinglePEWaveform = fSinglePEWaveforms[idSignalTemplate];
     }
     else
     {
@@ -663,6 +651,7 @@ namespace opdet
       }
       std::cout << " out " << " using ideal spe " << std ::endl;
     }
+    return fSinglePEWaveform;
   }
 
   //---------------------------------------------------------------------------
@@ -714,16 +703,18 @@ namespace opdet
             {
               unsigned int hardwareChannel =
                   geometry.HardwareChannelFromOpChannel(readoutChannel);
+
+              std::vector<double> SinglePEWaveform = CreateSinglePEWaveform(hardwareChannel);
               // Convert the time of the pulse to ticks
               size_t timeBin = TimeToTick(photonTime);
               // Add 1 pulse to the waveform
-              AddPulse(timeBin, CrossTalk(), pdWaveforms.at(hardwareChannel), fls[hardwareChannel], hardwareChannel);
+              AddPulse(SinglePEWaveform, timeBin, CrossTalk(), pdWaveforms.at(hardwareChannel), fls[hardwareChannel], hardwareChannel);
 
               unsigned int opChannel = geometry.OpChannel(opDet, hardwareChannel);
               // Set/find tick. Set/find Channel
               sim::OpDet_Time_Chans::stored_time_t tmp_time = time_sdps.first;
-              DivRec.m(opChannel, tid, tmp_time);
-              if (fDigiTree_SSP_LED)
+              DivRec.AddPhoton(opChannel, tid, tmp_time);
+              if (fDigiTreeSSPLED)
               {
                 op_photon.emplace_back(opChannel);
                 t_photon.emplace_back(photonTime); // vitor: devo usar o time ou o tick?
@@ -757,7 +748,7 @@ namespace opdet
   //---------------------------------------------------------------------------
   void OpDetDigitizerDUNE::
       AddLineNoise(std::vector<std::vector<double>> &waveforms,
-                   const std::vector<FocusList> &fls, int channel) const
+                   const std::vector<FocusList> &fls, unsigned int channel) const
   {
     int i = 0;
     for (auto &waveform : waveforms)
@@ -765,63 +756,51 @@ namespace opdet
       for (unsigned int j = 0; j < fls[i].ranges.size(); ++j)
       {
         const std::pair<int, int> &p = fls[i].ranges[j];
-        const std::vector<double> NoiseTemplate = fNoiseTemplates[fChannelToNoiseTemplateMap[channel]];
-        std::vector<double> Noise = GenerateNoiseFromTemplate(NoiseTemplate, p.second - p.first + 1);
-        if (fUseSinglePETemplate)
+        for (int k = p.first; k <= p.second; ++k)
         {
-          for (int k = p.first; k <= p.second; ++k)
-          {
-            waveform[k] += Noise[k - p.first];
-          }
-        }
-        else
-        {
-          for (int k = p.first; k <= p.second; ++k)
-          {
-            waveform[k] += fRandGauss->fire(0, fLineNoiseRMS);
-          }
+          waveform[k] += fRandGauss->fire(0, fLineNoiseRMS);
         }
       }
+    }
+    ++i;
+  }
 
+  void OpDetDigitizerDUNE::AddTemplateNoise(std::vector<std::vector<double>> &waveforms,
+                                            const std::vector<FocusList> &fls, unsigned int channel) const
+  {
+    int i = 0;
+    for (auto &waveform : waveforms)
+    {
+      for (unsigned int j = 0; j < fls[i].ranges.size(); ++j)
+      {
+        const std::pair<int, int> &p = fls[i].ranges[j];
+        // Get the noise template for this channel
+        unsigned int idNoiseTemplate = fChannelToNoiseTemplateMap.at(channel);
+        std::vector<double> NoiseTemplate = fNoiseTemplates[idNoiseTemplate];
+        int N = int(waveform.size());
+        std::vector<double> noise(N, 0.0);
+        for (int k = p.first; k <= p.second; ++k)
+        {
+          // Generate a random phase
+          double phase = 2 * M_PI * gRandom->Rndm();
+          // Generate a random amplitude
+          double amplitude = sqrt(NoiseTemplate[k] / 2.0);
+          // Generate the noise
+          noise[k] = amplitude * cos(phase);
+          waveform[k] += noise[k];
+        }
+      }
       ++i;
     }
-  }
-
-  // Generate random Gaussian noise with a specific variance
-  double GenerateGaussianNoise(double variance, std::mt19937 &gen, std::normal_distribution<> &dist)
-  {
-    double stddev = sqrt(variance); // Standard deviation is sqrt of variance
-    return dist(gen) * stddev;      // Scale Gaussian noise by standard deviation
-  }
-
-  // Function to generate noise directly from a power spectrum (time domain approximation)
-  std::vector<double> GenerateNoiseFromTemplate(const std::vector<double> &NoiseTemplate, int N)
-  {
-    // Set up random number generator for Gaussian noise
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::normal_distribution<> dist(0.0, 1.0); // Standard normal distribution (mean 0, stddev 1)
-
-    // Output noise signal
-    std::vector<double> noise(N, 0.0);
-
-    // Generate noise bin by bin using the power spectrum
-    for (int i = 0; i < N; i++)
-    {
-      double variance = NoiseTemplate[i];                    // Variance for this bin (from power spectrum)
-      noise[i] = GenerateGaussianNoise(variance, gen, dist); // Generate noise with this variance
-    }
-
-    return noise;
   }
 
   //---------------------------------------------------------------------------
   void OpDetDigitizerDUNE::
       AddDarkNoise(std::vector<std::vector<double>> &waveforms,
-                   std::vector<FocusList> &fls, int SignedChannel) const
+                   std::vector<FocusList> &fls, unsigned int channel) const
   {
     int i = 0;
-    unsigned int channel = SignedChannel;
+    std::vector<double> SinglePEWaveform = CreateSinglePEWaveform(channel);
     for (auto &waveform : waveforms)
     {
       // Multiply by 10^6 since fDarkNoiseRate is in Hz
@@ -829,7 +808,7 @@ namespace opdet
       while (darkNoiseTime < fTimeEnd)
       {
         size_t timeBin = TimeToTick(darkNoiseTime);
-        AddPulse(timeBin, CrossTalk(), waveform, fls[i], channel);
+        AddPulse(SinglePEWaveform, timeBin, CrossTalk(), waveform, fls[i], channel);
         // Find next time to simulate a single PE pulse
         darkNoiseTime += static_cast<double>(fRandExponential->fire(1.0 / fDarkNoiseRate) * 1000000.0);
       }

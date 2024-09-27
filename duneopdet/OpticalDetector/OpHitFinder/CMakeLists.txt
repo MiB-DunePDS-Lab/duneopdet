@@ -6,7 +6,6 @@ art_make( BASENAME_ONLY ALLOW_UNDERSCORES
                                 larcore::Geometry_Geometry_service
                                 larana::OpticalDetector_OpHitFinder
                                 lardataalg::DetectorInfo
-                                #duneopdet::OpticalDetector_OpHitFinder
                                 nusimdata::SimulationBase
                                 fhiclcpp::fhiclcpp
                                 messagefacility::MF_MessageLogger

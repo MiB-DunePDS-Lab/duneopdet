@@ -102,13 +102,14 @@ namespace opdet
       fhicl::Atom<bool> ApplyPostBLCorrection{fhicl::Name("ApplyPostBLCorrection")};
       fhicl::Atom<bool> AutoScale{fhicl::Name("AutoScale"), false};
       fhicl::Atom<std::string> OutputProduct{fhicl::Name("OutputProduct"), "decowave"};
+      fhicl::Atom<short> InputPolarity{fhicl::Name("InputPolarity")};
 
-      fhicl::Sequence<unsigned int> TemplateMap_channel{fhicl::Name("TemplateMapChannel")};
-      fhicl::Sequence<unsigned int> TemplateMap_template{fhicl::Name("TemplateMapTemplate")};
-      fhicl::Sequence<unsigned int> NoiseTemplateMap_channel{fhicl::Name("NoiseTemplateMapChannel")};
-      fhicl::Sequence<unsigned int> NoiseTemplateMap_template{fhicl::Name("NoiseTemplateMapTemplate")};
+      fhicl::Sequence<unsigned int> TemplateMap_channels{fhicl::Name("TemplateMapChannels")};
+      fhicl::Sequence<unsigned int> TemplateMap_templates{fhicl::Name("TemplateMapTemplates")};
+      fhicl::Sequence<unsigned int> NoiseTemplateMap_channels{fhicl::Name("NoiseTemplateMapChannels")};
+      fhicl::Sequence<unsigned int> NoiseTemplateMap_templates{fhicl::Name("NoiseTemplateMapTemplates")};
 
-      fhicl::Sequence<unsigned int> IgnoreChannels{fhicl::Name("IgnoreChannels")};
+      fhicl::Sequence<int> IgnoreChannels{fhicl::Name("IgnoreChannels")}; // integer to allow for channel -1 = unrecognized channel
 
       struct Filter
       {
@@ -313,6 +314,8 @@ namespace opdet
     bool fApplyPostBLCorr;
     bool fAutoScale;
 
+    short int fInputPolarity; //!< whether the input raw waveform is positive or negative
+
     // Additional parameters here
 
     //--- Single photoelectron variables
@@ -321,7 +324,7 @@ namespace opdet
     std::vector<double> fSinglePEAmplitudes;                    //!< single PE amplitude for found maximum peak in the template.
     unsigned int WfDeco;                                        //!< Number of waveform processed
     std::map<unsigned int, unsigned int> fChannelToTemplateMap; //!< maps a channel id to the input SPE  template file (index in fSinglePEWaveforms)
-    std::set<unsigned int> fIgnoreChannels;                     //!< List of channels to ignore in deconvolution
+    std::set<int> fIgnoreChannels;                              //!< List of channels to ignore in deconvolution
 
     // Noise templates -- input in frequency domain
     std::vector<std::vector<double>> fNoiseTemplates;                //!< Vector that stores noise template in frequency domain
@@ -385,6 +388,7 @@ namespace opdet
         fApplyPostfilter{pars().ApplyPostfilter()},
         fApplyPostBLCorr{pars().ApplyPostBLCorrection()},
         fAutoScale{pars().AutoScale()},
+        fInputPolarity{pars().InputPolarity()},
         fNoiseDefault(fSamples, fLineNoiseRMS * fLineNoiseRMS * fSamples),
         fOutputProduct{pars().OutputProduct()},
         fPostfilterConfig{WfmExtraFilter_t(pars().Postfilter())},
@@ -422,8 +426,8 @@ namespace opdet
 
     // prepare channel to template map
     {
-      auto channels = pars().TemplateMap_channel();
-      auto templates = pars().TemplateMap_template();
+      auto channels = pars().TemplateMap_channels();
+      auto templates = pars().TemplateMap_templates();
       auto chann = channels.begin();
       auto templ = templates.begin();
       for (; chann != channels.end(); ++chann, ++templ)
@@ -435,8 +439,8 @@ namespace opdet
     // Prepare the noise templates
     SourceNoiseTemplateFiles();
     {
-      auto channels = pars().NoiseTemplateMap_channel();
-      auto templates = pars().NoiseTemplateMap_template();
+      auto channels = pars().NoiseTemplateMap_channels();
+      auto templates = pars().NoiseTemplateMap_templates();
       auto chann = channels.begin();
       auto templ = templates.begin();
       for (; chann != channels.end(); ++chann, ++templ)
@@ -452,6 +456,7 @@ namespace opdet
 
     //=== info print out ===
     auto mfi = mf::LogInfo("Deconvolution::Deconvolution()");
+    mfi << "Input waveform polarity set to: " << fInputPolarity << "\n";
     // info on channel to SPE template map
     mfi << "Channels mapped to SPE template files:\n";
     {
@@ -572,11 +577,17 @@ namespace opdet
         out_recob_float.resize(fSamples);
       }
 
+      // Calculate pedestal
+      double pedestal = 0.;
+      for (int i = 0; i < int(fPreTrigger - fPedestalBuffer); ++i)
+        pedestal += wf[i];
+      pedestal /= (fPreTrigger - fPedestalBuffer);
+
       for (Int_t i = 0; i < fSamples; i++)
       {
         // Remove baseline
         if (i < static_cast<int>(wf.Waveform().size()))
-          xv[i] = (wf[i] - fPedestal);
+          xv[i] = fInputPolarity * (wf[i] - pedestal);
         // if waveform is shorter than fSamples fill the rest with noise
         else
           xv[i] = CLHEP::RandGauss::shoot(0, fLineNoiseRMS);
@@ -584,6 +595,7 @@ namespace opdet
 
       //---------------------------------------------------- Guess input signal
       // Found maximum peak in the Waveform
+      // Assume xv has positive polarity
       Double_t SPE_Max = 0;
       double maxADC = *max_element(xv.begin(), xv.end());
       double maxAmplit = maxADC; // Pedestal already subtracted
@@ -614,13 +626,13 @@ namespace opdet
 
       for (int i = 0; i < fSamples * 0.5 + 1; i++)
       {
-        // Compute spectral density
-        double H2 = xH.fCmplx.at(i).Rho2();
-        double S2 = xS.fCmplx.at(i).Rho2();
-        double N2 = xN.at(i);
 
         if (fFilterConfig.fType == Deconvolution::kWiener)
         {
+          // Compute spectral density
+          double H2 = xH.fCmplx.at(i).Rho2();
+          double S2 = xS.fCmplx.at(i).Rho2();
+          double N2 = xN.at(i);
           // Compute Wiener filter
           xSNR.at(i) = S2 / N2;
           xG.fCmplx.at(i) = TComplex::Conjugate(xH.fCmplx.at(i)) * S2 / (H2 * S2 + N2);
@@ -628,6 +640,7 @@ namespace opdet
 
         else if (fFilterConfig.fType == Deconvolution::kGauss)
         {
+          // vpec: FIXME: don't repeat this calculation every time? Can this be precalculated?
           // Compute gauss filter
           xG.fCmplx[0] = TComplex(0, 0);
           xG.fCmplx.at(i) = TComplex::Exp(
@@ -668,6 +681,17 @@ namespace opdet
         scale = filter_norm / (Double_t)fSamples;
       }
 
+      // calculate pedestal before prefilter - assuming filter has no effect on baseline
+      double decPedestal = 0;
+      if (fApplyPostBLCorr)
+      {
+        for (size_t i = 0; i < (fPreTrigger - fPedestalBuffer); i++)
+        {
+          decPedestal = decPedestal + xvdec[i];
+        }
+        decPedestal = decPedestal / int(fPreTrigger - fPedestalBuffer);
+      }
+
       if (fApplyPostfilter)
       {
         CmplxWaveform_t xxY(fSamples);
@@ -688,17 +712,8 @@ namespace opdet
         }
       }
       //
-      // Correct baseline after deconvolution
-      double decPedestal = 0;
-      if (fApplyPostBLCorr)
-      {
-        for (size_t i = 0; i < fPreTrigger - fPedestalBuffer; i++)
-        {
-          decPedestal = decPedestal + xvdec[i];
-        }
-        decPedestal = decPedestal / int(fPreTrigger - fPedestalBuffer);
-      }
 
+      // Apply pedestal after post-filter
       for (int i = 0; i < fSamples; i++)
       {
         out_recob_float[i] = (xvdec[i] - decPedestal) * scale;

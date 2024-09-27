@@ -1,8 +1,8 @@
-#add_subdirectory(BackTrackingTests)
-
 art_make( BASENAME_ONLY ALLOW_UNDERSCORES
                 LIBRARY_NAME duneopdet_OpticalDetector
                 LIB_LIBRARIES 
+                                duneopdet::SolarNuUtils
+                                duneopdet::SPETemplate
                                 lardataobj::RecoBase
                                 larcorealg::Geometry
                                 larcore::Geometry_Geometry_service
@@ -26,6 +26,8 @@ art_make( BASENAME_ONLY ALLOW_UNDERSCORES
                                 Boost::filesystem
   
                 MODULE_LIBRARIES
+                                duneopdet::SolarNuUtils
+                                duneopdet::SPETemplate
                                 dunecore::DuneObj
                                 lardataalg::DetectorInfo
                                 lardataobj::RecoBase
@@ -61,6 +63,8 @@ art_make( BASENAME_ONLY ALLOW_UNDERSCORES
                                 FFTW3::FFTW3
 
                 SERVICE_LIBRARIES
+                                duneopdet::SolarNuUtils
+                                duneopdet::SPETemplate
                                 larcorealg::Geometry
                                 larcore::Geometry_Geometry_service
                                 lardata::headers
@@ -80,7 +84,6 @@ art_make( BASENAME_ONLY ALLOW_UNDERSCORES
                                 cetlib::cetlib cetlib_except::cetlib_except
 				CLHEP::CLHEP
                                 Boost::filesystem
-
 )
 
 file(GLOB dat_files *.dat)
@@ -92,4 +95,3 @@ install_source()
 
 add_subdirectory(Deconvolution)
 add_subdirectory(OpHitFinder)
-add_subdirectory(SPETemplate)

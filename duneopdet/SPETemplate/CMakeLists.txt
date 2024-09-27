@@ -1,0 +1,24 @@
+cet_make_library(
+  LIBRARY_NAME
+    SPETemplate
+  SOURCE
+    SPETemplateUtils.cc
+  LIBRARIES
+      ${ROOT_CORE}
+      ${ROOT_EVE}
+      cetlib::cetlib
+      lardata::Utilities
+      lardataobj::RawData
+      larcorealg::Geometry
+      lardataalg::DetectorInfo
+      lardataobj::RecoBase
+      larcore::Geometry_Geometry_service
+      messagefacility::MF_MessageLogger
+      art::Framework_Core
+      art::Framework_Principal
+      art::Framework_Services_Registry
+      art::Persistency_Provenance
+      art::Persistency_Common
+      art::Utilities 
+      art_root_io::tfile_support
+)
